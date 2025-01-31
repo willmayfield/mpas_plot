@@ -65,7 +65,7 @@ This plotting utility is in a very early form, and has several known limitations
 
 1. The user must know the name of the variable they want to plot, as well as the number of vertical levels if the variable has multiple.
 2. Only the [PlateCarree](https://scitools.org.uk/cartopy/docs/latest/reference/projections.html#platecarree) projection is currently supported for output maps
-3. Only face-centered variables currently work
-4. The plotting script runs serially, which means it can take a long time to create a lot of large-domain plots.
+3. The plotting script runs serially, which means it can take a long time to create a lot of large-domain plots.
+4. Certain variables that have additional dimensions such as grid property values (e.g. kiteAreasOnVertex) may not work out-of-the-box.
 
 
