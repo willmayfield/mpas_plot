@@ -18,11 +18,11 @@ import cartopy.crs as ccrs
 
 import uwtools.api.config as uwconfig
 
-def load_dataset(fn: str, gf: str = "") -> ux.UxDataset:
+def load_dataset(fn: str, gf: str = "") -> tuple[ux.UxDataset,ux.Grid]:
     """
-    Program loads the dataset from the specified MPAS NetCDF data file
-    and grid file and returns it as a ux.UxDataset object. If grid file not specified,
-    it is assumed to be the same as the data file.
+    Program loads the dataset from the specified MPAS NetCDF data file and grid file and returns
+    ux.UxDataset and ux.Grid objects. If grid file not specified, it is assumed to be the same as
+    the data file.
     """
 
     logging.info(f"Reading data from {fn}")
@@ -30,12 +30,9 @@ def load_dataset(fn: str, gf: str = "") -> ux.UxDataset:
         logging.info(f"Reading grid from {gf}")
     else:
         gf=fn
-    grid = ux.open_grid(gf)
-    logging.debug(grid)
+    return ux.open_dataset(gf,fn),ux.open_grid(gf)
 
-    return ux.open_dataset(gf,fn)
-
-def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
+def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> None:
     """
     The main program that makes the plot(s)
     """
@@ -44,6 +41,7 @@ def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
     #filename minus extension
     fnme=os.path.splitext(filename)[0]
 
+    logging.debug(f"Available data variables:\n{list(uxds.data_vars.keys())}")
     # To plot all variables, call plotit() recursively, trapping errors
     if config_d["data"]["var"]=="all":
         newconf = copy.deepcopy(config_d)
@@ -51,7 +49,7 @@ def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
             logging.debug(f"Trying to plot variable {var}")
             newconf["data"]["var"]=[var]
             try:
-                plotit(newconf,uxds,filepath)
+                plotit(newconf,uxds,grid,filepath)
             except Exception as e:
                 logging.warning(f"Could not plot variable {var}")
                 logging.warning(f"{type(e).__name__}:")
@@ -67,7 +65,7 @@ def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
             logging.debug(f"Trying to plot level {lev} for variable {newconf['data']['var']}")
             newconf["data"]["lev"]=[lev]
             try:
-                plotit(newconf,uxds,filepath)
+                plotit(newconf,uxds,grid,filepath)
             except Exception as e:
                 logging.warning(f"Could not plot variable {newconf['data']['var']}, level {lev}")
                 logging.warning(e)
@@ -75,15 +73,17 @@ def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
     elif isinstance(config_d["data"]["var"], list):
         start = time.time()
         for var in config_d["data"]["var"]:
-            if "n_face" not in uxds[var].dims:
-                logging.info(f"Variable {var} not face-centered, skipping")
-                continue
+            if var not in list(uxds.data_vars.keys()):
+                msg = f"{var=} is not a valid variable in {filepath}\n\n{uxds.data_vars}"
+                raise ValueError(msg)
             logging.info(f"Plotting variable {var}")
+            logging.debug(f"{uxds[var]=}")
             field=uxds[var]
             # If multiple timesteps in a file, only plot the first for now
             if "Time" in field.dims:
                 logging.info("Plotting first time step")
                 field=field.isel(Time=0)
+
             # Parse multiple levels for 3d fields
             # "sliced" is a dictionary of 2d slices of data we will plot. We use a dictionary
             # instead of a list because the levels may not necessarily be contiguous or monotonic
@@ -100,6 +100,12 @@ def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
 
             for lev in levs:
                 logging.debug(f"For level {lev}, data slice to plot:\n{sliced[lev]}")
+
+                if "n_face" not in field.dims:
+                    logging.warning(f"Variable {var} not face-centered, will interpolate to faces")
+                    sliced[lev] = sliced[lev].remap.inverse_distance_weighted(grid, remap_to='face centers', k=3)
+                    logging.debug(f"Data slice after interpolation:\n{sliced[lev]=}")
+
                 if config_d["plot"]["periodic_bdy"]:
                     logging.info("Creating polycollection with periodic_bdy=True")
                     logging.info("NOTE: This option can be very slow for large domains")
@@ -140,14 +146,22 @@ def plotit(config_d: dict,uxds: ux.UxDataset,filepath: str) -> None:
                 patterns = {
                     "var": var,
                     "lev": lev,
-                    "units": uxds[var].attrs["units"],
-                    "varln": uxds[var].attrs["long_name"],
+                    "units": field.attrs["units"],
+                    "varln": field.attrs["long_name"],
                     "filename": filename,
                     "fnme": fnme,
-                    "date": uxds[var].coords['Time'].dt.strftime('%Y-%m-%d').values[0],
-                    "time": uxds[var].coords['Time'].dt.strftime('%H:%M:%S').values[0]
                 }
-    
+                if "Time" in field.dims:
+                    patterns.update({
+                        "date": field.coords['Time'].dt.strftime('%Y-%m-%d').values[0],
+                        "time": field.coords['Time'].dt.strftime('%H:%M:%S').values[0]
+                    })
+                else:
+                    patterns.update({
+                        "date": "no_Time_dimension",
+                        "time": "no_Time_dimension"
+                    })
+
                 coll = ax.add_collection(pc)
     
                 plottitle=config_d["plot"]["title"].format_map(patterns)
@@ -286,7 +300,9 @@ if __name__ == "__main__":
 
     for f in files:
         # Open specified file and load dataset
-        dataset=load_dataset(f,expt_config["data"]["gridfile"])
+        dataset,grid=load_dataset(f,expt_config["data"]["gridfile"])
 
+        logging.debug(f"{dataset=}")
+        logging.debug(f"{grid=}")
         # Make the plots!
-        plotit(expt_config,dataset,f)
+        plotit(expt_config,dataset,grid,f)
