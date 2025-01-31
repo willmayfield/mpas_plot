@@ -71,8 +71,8 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                 logging.warning(e)
 
     elif isinstance(config_d["data"]["var"], list):
-        start = time.time()
         for var in config_d["data"]["var"]:
+            plotstart = time.time()
             if var not in list(uxds.data_vars.keys()):
                 msg = f"{var=} is not a valid variable in {filepath}\n\n{uxds.data_vars}"
                 raise ValueError(msg)
@@ -103,7 +103,8 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
 
                 if "n_face" not in field.dims:
                     logging.warning(f"Variable {var} not face-centered, will interpolate to faces")
-                    sliced[lev] = sliced[lev].remap.inverse_distance_weighted(grid, remap_to='face centers', k=3)
+                    sliced[lev] = sliced[lev].remap.inverse_distance_weighted(grid,
+                                                                      remap_to='face centers', k=3)
                     logging.debug(f"Data slice after interpolation:\n{sliced[lev]=}")
 
                 if config_d["plot"]["periodic_bdy"]:
@@ -118,8 +119,10 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                 pc.set_cmap(config_d["plot"]["colormap"])
                 pc.set_clim(config_d["plot"]["vmin"],config_d["plot"]["vmax"])
 
-                fig, ax = plt.subplots(1, 1, figsize=(config_d["plot"]["figwidth"], config_d["plot"]["figheight"]),
-                                   dpi=config_d["plot"]["dpi"], constrained_layout=True, subplot_kw=dict(projection=ccrs.PlateCarree()))
+                fig, ax = plt.subplots(1, 1, figsize=(config_d["plot"]["figwidth"],
+                                       config_d["plot"]["figheight"]), dpi=config_d["plot"]["dpi"],
+                                       constrained_layout=True,
+                                       subplot_kw=dict(projection=ccrs.PlateCarree()))
 
 
                 ax.set_xlim((config_d["plot"]["lonrange"][0],config_d["plot"]["lonrange"][1]))
@@ -127,19 +130,22 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
 
                 #Plot coastlines if requested
                 if config_d["plot"]["coastlines"]:
-                    ax.add_feature(cfeature.NaturalEarthFeature(category='physical', **config_d["plot"]["coastlines"], name='coastline'))
+                    ax.add_feature(cfeature.NaturalEarthFeature(category='physical',
+                                   **config_d["plot"]["coastlines"], name='coastline'))
                 if config_d["plot"]["boundaries"]:
                     if config_d["plot"]["boundaries"]["detail"]==0:
                         name='admin_0_countries'
                     elif config_d["plot"]["boundaries"]["detail"]==1:
                         name='admin_1_states_provinces'
                     elif config_d["plot"]["boundaries"]["detail"]==2:
-                        logging.debug("Counties only available at 10m resolution, overwriting scale=10m")
+                        logging.info("Counties only available at 10m resolution")
                         config_d["plot"]["boundaries"]["scale"]='10m'
                         name='admin_2_counties'
                     else:
                         raise ValueError(f'Invalid value for {config_d["plot"]["boundaries"]["detail"]=}')
-                    ax.add_feature(cfeature.NaturalEarthFeature(category='cultural', scale=config_d["plot"]["boundaries"]["scale"], facecolor='none', linewidth=0.2, name=name))
+                    ax.add_feature(cfeature.NaturalEarthFeature(category='cultural',
+                                   scale=config_d["plot"]["boundaries"]["scale"], facecolor='none',
+                                   linewidth=0.2, name=name))
 
             # Create a dict of substitutable patterns to make string substitutions easier
             # using the python string builtin method format_map()
@@ -163,10 +169,10 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                     })
 
                 coll = ax.add_collection(pc)
-    
+
                 plottitle=config_d["plot"]["title"].format_map(patterns)
                 plt.title(plottitle, wrap=True)
-    
+
                 # Handle colorbar
                 if config_d["plot"].get("colorbar"):
                     cb = config_d["plot"]["colorbar"]
@@ -181,6 +187,7 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                     os.makedirs(os.path.dirname(outfile),exist_ok=True)
                 plt.savefig(outfile)
                 plt.close()
+                logging.debug(f"Done. Plot generation {time.time()-plotstart} seconds")
 
 
     else:
