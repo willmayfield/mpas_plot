@@ -147,8 +147,32 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                                    scale=config_d["plot"]["boundaries"]["scale"], facecolor='none',
                                    linewidth=0.2, name=name))
 
-            # Create a dict of substitutable patterns to make string substitutions easier
-            # using the python string builtin method format_map()
+                #Set file format based on filename or manual settings
+                validfmts=fig.canvas.get_supported_filetypes()
+                outfile=config_d['plot']['filename']
+                if "." in os.path.basename(outfile):
+                    #output filename minus extension
+                    outfnme=os.path.splitext(outfile)[:-1]
+                    fmt=os.path.splitext(outfile)[-1]
+                    if config_d["plot"]["format"] is not None:
+                        if fmt != config_d["plot"]["format"]:
+                            raise ValueError(f"plot:format is inconsistent with plot:filename\n" +
+                                             f"{config_d['plot']['format']=}\n" +
+                                             f"{config_d['plot']['filename']=}")
+                else:
+                    outfnme=outfile
+                    if config_d["plot"]["format"] is not None:
+                        fmt=config_d["plot"]["format"]
+                    else:
+                        logging.warning("No output file format specified; defaulting to PNG")
+                        fmt='png'
+
+                if fmt not in validfmts:
+                    raise ValueError(f"Invalid file format requested: {fmt}\n" +
+                                     f"Valid formats are:\n{validfmts}")
+
+                # Create a dict of substitutable patterns to make string substitutions easier
+                # using the python string builtin method format_map()
                 patterns = {
                     "var": var,
                     "lev": lev,
@@ -168,6 +192,26 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                         "time": "no_Time_dimension"
                     })
 
+                # Check if the file already exists, if so act according to plot:exists setting
+                outfnme=outfnme.format_map(patterns)
+                outfile=f"{outfnme.format_map(patterns)}.{fmt}"
+                if os.path.isfile(outfile):
+                    if config_d["plot"]["exists"]=="overwrite":
+                        logging.info(f"Overwriting existing file {outfile}")
+                    elif config_d["plot"]["exists"]=="abort":
+                        raise FileExistsError(f"{outfile}\n"
+                              "to change this behavior see plot:exists setting in config file")
+                    elif config_d["plot"]["exists"]=="rename":
+                        logging.info(f"File exists: {outfile}")
+                        i=0
+                        # I love when I get to use the walrus operator :D
+                        while os.path.isfile(outfile:=f"{outfnme}-{i}.{fmt}"):
+                            logging.debug(f"File exists: {outfile}")
+                            i+=1
+                        logging.info(f"Saving to {outfile} instead")
+                    else:
+                        raise ValueError(f"Invalid option: {config_d['plot']['exists']}")
+
                 coll = ax.add_collection(pc)
 
                 plottitle=config_d["plot"]["title"].format_map(patterns)
@@ -180,12 +224,11 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                     if cb.get("label"):
                         cbar.set_label(cb["label"].format_map(patterns))
 
-                outfile=config_d["plot"]["filename"].format_map(patterns)
                 # Make sure any subdirectories exist before we try to write the file
-                logging.debug(f"Saving plot {outfile}")
                 if os.path.dirname(outfile):
                     os.makedirs(os.path.dirname(outfile),exist_ok=True)
-                plt.savefig(outfile)
+                logging.debug(f"Saving plot {outfile}")
+                plt.savefig(outfile,format=fmt)
                 plt.close()
                 logging.debug(f"Done. Plot generation {time.time()-plotstart} seconds")
 

@@ -61,11 +61,21 @@ data:
 # This section is for variables related to how the plot(s) is/are created.
 plot:
   # filename:
-  # The filename of the output plot(s).
+  # The filename of the output plot(s). If an extension is included (e.g. ".png"), it will determine the format of the image.
+  #
+  # format:
+  # The image format of the output, if not specified in the filename. See matplotlib documentation for valid options:
+  # https://matplotlib.org/stable/api/_as_gen/matplotlib.pyplot.savefig.html#matplotlib.pyplot.savefig
   # 
   # title:
   # The title of the output plot(s) that will appear in the image above the plotted data. To create
   # a plot with no title, set this to a blank string.
+  #
+  # exists:
+  # Handle case when file exists. Valid options are
+  #    overwrite  Overwrite existing file
+  #    abort      Raise exception
+  #    rename     Rename the old file using the scheme {filename}-#.png, where # is the next available sequential integer
   #
   # latrange:
   # Range of latitudes to plot. Should be a 2-element list, with the first entry being less than the second
@@ -106,7 +116,9 @@ plot:
   # {time} = The time of plotted data, in %H:%M:%S format
 
   filename: '{var}_{lev}.png'
+  format: null
   title: 'Plot of {varln}, level {lev} for MPAS forecast, {date} {time}'
+  exists: rename
   latrange:
     - -90
     - 90
