@@ -1,6 +1,6 @@
 data:
-  filename: /scratch1/BMC/hmtb/kavulich/MPAS/plotting_scripts/debby/history.2024-08-08_12.00.00.nc
-#  gridfile: /scratch1/BMC/hmtb/kavulich/MPAS/plotting_scripts/debby/history.2024-08-08_12.00.00.nc
+  filename: /scratch1/BMC/hmtb/kavulich/MPAS/plotting_scripts/DTC_fork/mpas_app/ush/plotting/history.2023-09-15_09.00.00.nc
+#  gridfile: /scratch1/BMC/hmtb/kavulich/MPAS/plotting_scripts/DTC_fork/mpas_app/ush/plotting/history.2023-09-15_09.00.00.nc
   var:
     - qv
   lev:

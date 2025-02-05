@@ -32,13 +32,17 @@ The plotting script is built with argparse, so you can see a summary of the argu
 
 ```
 $ python plot_mpas_netcdf.py -h
-usage: plot_mpas_netcdf.py [-h] [-c CONFIG] [-d]
+usage: plot_mpas_netcdf.py [-h] [-c CONFIG] [-d] [-p PROCS]
+
 Script for plotting MPAS input and/or output in native NetCDF format
+
 options:
   -h, --help            show this help message and exit
   -c CONFIG, --config CONFIG
                         File used to specify plotting options
   -d, --debug           Script will be run in debug mode with more verbose output
+  -p PROCS, --procs PROCS
+                        Number of processors for generating plots in parallel
 ```
 
 The config file is where you will specify all the various options for what you want to plot, including which files, variables, levels, etc you want to plot. To setup the script to use your specific options, you’ll need to create a configuration file (`config_plot.yaml`). An example file `config_plot.yaml.example` is provided for reference, and you can view all available options in the `default_options.yaml` file.
@@ -65,7 +69,6 @@ This plotting utility is in a very early form, and has several known limitations
 
 1. The user must know the name of the variable they want to plot, as well as the number of vertical levels if the variable has multiple.
 2. Only the [PlateCarree](https://scitools.org.uk/cartopy/docs/latest/reference/projections.html#platecarree) projection is currently supported for output maps
-3. The plotting script runs serially, which means it can take a long time to create a lot of large-domain plots.
-4. Certain variables that have additional dimensions such as grid property values (e.g. kiteAreasOnVertex) may not work out-of-the-box.
+3. Certain variables that have additional dimensions such as grid property values (e.g. kiteAreasOnVertex) may not work out-of-the-box.
 
 

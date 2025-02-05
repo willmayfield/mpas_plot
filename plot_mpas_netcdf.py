@@ -9,14 +9,21 @@ import logging
 import os
 import sys
 import time
+import traceback
+from multiprocessing import Pool
 
 print("Importing uxarray; this may take a while...")
 import uxarray as ux
+import matplotlib as mpl
+#This is needed to solve memory leak with large numbers of plots
+#https://github.com/matplotlib/matplotlib/issues/20300
+mpl.use('agg')
 import matplotlib.pyplot as plt
 import cartopy.feature as cfeature
 import cartopy.crs as ccrs
 
 import uwtools.api.config as uwconfig
+
 
 def load_dataset(fn: str, gf: str = "") -> tuple[ux.UxDataset,ux.Grid]:
     """
@@ -32,9 +39,54 @@ def load_dataset(fn: str, gf: str = "") -> tuple[ux.UxDataset,ux.Grid]:
         gf=fn
     return ux.open_dataset(gf,fn),ux.open_grid(gf)
 
-def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> None:
+
+def plotitparallel(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str,variable: list=[],level: list=[]) -> None:
+    """
+    The a wrapper for plotit() used for calling it recursively and in parallel with use of starmap
+    Args:
+        config_d     (dict): A dictionary containing experiment settings
+        uxds (ux.UxDataset): A ux.UxDataset object containing the data to be plotted
+        grid      (ux.Grid): A ux.Grid object containing the unstructured grid information
+        filepath      (str): The filename of the input data that was read into the ux objects
+        variable     (list): A one-item list, the variable name to plot. Used to overwrite the
+                             value in data:var (used for recursion over all variables)
+        level        (list): A one-item list, the vertical level to plot. If provided, overwrites
+                             the value in data:lev (used for recursion over all levels)
+
+    Returns:
+        None
+
+    """
+
+    newconf = copy.deepcopy(config_d)
+    if variable:
+        newconf["data"]["var"]=variable
+    if level:
+        newconf["data"]["lev"]=level
+
+    logging.debug(f'Trying to plot level {newconf["data"]["lev"]} for variable {newconf["data"]["var"]}')
+    try:
+        plotit(newconf,uxds,grid,filepath,1)
+    except Exception as e:
+        logging.warning(f'Could not plot variable {newconf["data"]["var"]}, level {newconf["data"]["lev"]}')
+        logging.warning(f"{traceback.print_tb(e.__traceback__)}:")
+        logging.warning(f"{type(e).__name__}:")
+        logging.warning(e)
+
+
+
+def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str,parproc: int) -> None:
     """
     The main program that makes the plot(s)
+    Args:
+        config_d     (dict): A dictionary containing experiment settings
+        uxds (ux.UxDataset): A ux.UxDataset object containing the data to be plotted
+        grid      (ux.Grid): A ux.Grid object containing the unstructured grid information
+        filepath      (str): The filename of the input data that was read into the ux objects
+        parproc       (int): The number of processors available for generating plots in parallel
+
+    Returns:
+        None
     """
 
     filename=os.path.basename(filepath)
@@ -44,31 +96,37 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
     logging.debug(f"Available data variables:\n{list(uxds.data_vars.keys())}")
     # To plot all variables, call plotit() recursively, trapping errors
     if config_d["data"]["var"]=="all":
-        newconf = copy.deepcopy(config_d)
+        args = []
         for var in uxds:
-            logging.debug(f"Trying to plot variable {var}")
-            newconf["data"]["var"]=[var]
-            try:
-                plotit(newconf,uxds,grid,filepath)
-            except Exception as e:
-                logging.warning(f"Could not plot variable {var}")
-                logging.warning(f"{type(e).__name__}:")
-                logging.warning(e)
+            # Create argument tuples for each call to plotit() for use with starmap
+            args.append( (config_d,uxds,grid,filepath,[var]) )
+        if parproc > 1:
+            with Pool(processes=parproc) as pool:
+                pool.starmap(plotitparallel, args)
+        else:
+            i=0
+            for instance in args:
+                # '*' operator unpacks tuple for use as args
+                plotitparallel(*args[i])
+                i+=1
     # To plot all levels, call plotit() recursively, trapping errors
     elif config_d["data"]["lev"]=="all":
-        newconf = copy.deepcopy(config_d)
-        if "nVertLevels" in uxds[newconf["data"]["var"]].dims:
-            levs = range(0,len(uxds[newconf["data"]["var"]]["nVertLevels"]))
+        args = []
+        if "nVertLevels" in uxds[config_d["data"]["var"]].dims:
+            levs = range(0,len(uxds[config_d["data"]["var"]]["nVertLevels"]))
         else:
             levs = [0]
         for lev in levs:
-            logging.debug(f"Trying to plot level {lev} for variable {newconf['data']['var']}")
-            newconf["data"]["lev"]=[lev]
-            try:
-                plotit(newconf,uxds,grid,filepath)
-            except Exception as e:
-                logging.warning(f"Could not plot variable {newconf['data']['var']}, level {lev}")
-                logging.warning(e)
+            # Create argument tuples for each call to plotit() for use with starmap
+            args.append( (config_d,uxds,grid,filepath,config_d["data"]["var"],[lev]) )
+        if parproc > 1:
+            with Pool(processes=parproc) as pool:
+                pool.starmap(plotitparallel, args)
+        else:
+            i=0
+            for instance in args:
+                plotitparallel(*args[i])
+                i+=1
 
     elif isinstance(config_d["data"]["var"], list):
         for var in config_d["data"]["var"]:
@@ -192,6 +250,7 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                         "time": "no_Time_dimension"
                     })
 
+
                 # Check if the file already exists, if so act according to plot:exists setting
                 outfnme=outfnme.format_map(patterns)
                 outfile=f"{outfnme.format_map(patterns)}.{fmt}"
@@ -229,7 +288,7 @@ def plotit(config_d: dict,uxds: ux.UxDataset,grid: ux.Grid,filepath: str) -> Non
                     os.makedirs(os.path.dirname(outfile),exist_ok=True)
                 logging.debug(f"Saving plot {outfile}")
                 plt.savefig(outfile,format=fmt)
-                plt.close()
+                plt.close(fig)
                 logging.debug(f"Done. Plot generation {time.time()-plotstart} seconds")
 
 
@@ -324,6 +383,8 @@ if __name__ == "__main__":
                         help='File used to specify plotting options')
     parser.add_argument('-d', '--debug', action='store_true',
                         help='Script will be run in debug mode with more verbose output')
+    parser.add_argument('-p', '--procs', type=int, default=1,
+                        help='Number of processors for generating plots in parallel')
 
     args = parser.parse_args()
 
@@ -355,4 +416,4 @@ if __name__ == "__main__":
         logging.debug(f"{dataset=}")
         logging.debug(f"{grid=}")
         # Make the plots!
-        plotit(expt_config,dataset,grid,f)
+        plotit(expt_config,dataset,grid,f,args.procs)
